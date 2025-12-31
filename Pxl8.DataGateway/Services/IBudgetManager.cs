@@ -38,4 +38,9 @@ public interface IBudgetManager
     /// Get consumed delta for usage reporting (and reset delta to 0)
     /// </summary>
     (long bandwidthDelta, int transformsDelta) GetAndResetConsumedDelta(Guid tenantId, Guid periodId);
+
+    /// <summary>
+    /// Get all tenant/period pairs with pending usage (non-zero deltas)
+    /// </summary>
+    IEnumerable<(Guid TenantId, Guid PeriodId)> GetAllTenantsWithPendingUsage();
 }

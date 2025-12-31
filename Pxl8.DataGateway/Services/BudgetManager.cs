@@ -193,6 +193,22 @@ public class BudgetManager : IBudgetManager
         }
     }
 
+    public IEnumerable<(Guid TenantId, Guid PeriodId)> GetAllTenantsWithPendingUsage()
+    {
+        foreach (var kvp in _budgets)
+        {
+            var budget = kvp.Value;
+            lock (budget.Lock)
+            {
+                // Only return budgets with non-zero deltas
+                if (budget.ConsumedBandwidthDelta > 0 || budget.ConsumedTransformsDelta > 0)
+                {
+                    yield return (budget.TenantId, budget.PeriodId);
+                }
+            }
+        }
+    }
+
     private TenantBudget GetOrCreateBudget(Guid tenantId, Guid periodId)
     {
         return _budgets.GetOrAdd((tenantId, periodId), _ => new TenantBudget
