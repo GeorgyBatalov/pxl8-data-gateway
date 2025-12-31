@@ -26,4 +26,9 @@ public interface IPolicySnapshotCache
     /// Get snapshot ID (for debugging/monitoring)
     /// </summary>
     Guid? GetSnapshotId();
+
+    /// <summary>
+    /// Get current snapshot (for health checks/monitoring)
+    /// </summary>
+    PolicySnapshotDto? GetCurrentSnapshot();
 }

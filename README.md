@@ -1,151 +1,138 @@
 # PXL8 Data Gateway
 
-**Version:** v1.0.0
-**Target:** .NET 9.0
-**Purpose:** High-performance image delivery plane (Data Plane)
+> **Version:** 1.0.0
+> **Status:** MVP Complete
+> **Architecture:** Autonomous Data Plane (RU/Yandex Cloud)
 
 ---
 
-## 🎯 Mission
+## Overview
 
-**Zero database calls in hot path.** Autonomous operation for 10+ minutes without Control Plane.
+**Data Gateway** is the high-performance image delivery plane for PXL8. It operates **autonomously** for 10+ minutes without Control Plane, ensuring zero downtime and <100ms p99 latency.
 
----
+### Key Principles:
 
-## 🏗️ Architecture Principles
-
-### Data Plane Characteristics:
-1. **Hot Path = In-Memory Only**
-   - No synchronous calls to PostgreSQL
-   - No synchronous calls to Control Plane
-   - Policy Snapshot cache (TTL 60s)
-   - Budget state in-memory (TenantBudget)
-
-2. **Asynchronous Communication**
-   - Policy snapshots: Pull every 60s from Control Plane
-   - Budget allocation: Request when needed, cache TTL leases
-   - Usage reporting: Batch reports every 10-30s
-
-3. **Autonomous Operation**
-   - Cached policies last 10+ minutes
-   - Budget leases have 5-minute TTL
-   - Graceful degradation on Control Plane failure
+- 🚀 **Hot Path Guarantee**: 0 database queries, 0 synchronous HTTP calls to Control Plane
+- 💰 **Budget Enforcement**: In-memory token-based quota tracking (bandwidth + transforms)
+- 📦 **Policy Snapshots**: Pull-based configuration sync (every 60 seconds)
+- 📊 **Usage Reporting**: Push-based delta reporting (every 10 seconds)
+- 🔄 **Budget Refill**: Automatic refill when < 20% remaining
 
 ---
 
-## 📦 What's Inside
+## Hot Path Flow
+
+### Image Request (GET /api/v1/images/{id})
 
 ```
-Pxl8.DataGateway/
-├── Controllers/
-│   └── ImagesController.cs        # Image upload/transform/delivery (hot path)
-├── Services/
-│   ├── BudgetManager.cs           # In-memory budget tracking
-│   ├── PolicySnapshotCache.cs     # Tenant policies cache
-│   ├── UsageAccumulator.cs        # Batch usage accumulator
-│   └── ImageProcessor.cs          # Image transformation logic
-├── BackgroundServices/
-│   ├── PolicySnapshotSyncer.cs    # Pull snapshots every 60s
-│   ├── UsageReporter.cs           # Push reports every 10-30s
-│   └── BudgetRefiller.cs          # Request budget when low
-└── Observability/
-    ├── Metrics.cs                 # Prometheus metrics
-    └── HealthChecks.cs            # Readiness/liveness probes
+User Request → ImagesController
+              ↓
+         BudgetManager.TrySpendBandwidth(tenant, period, bytes)
+              ↓
+         [In-Memory Check - 0 external calls]
+              ↓
+     ✅ Budget OK       ❌ Budget Exhausted
+              ↓                   ↓
+       Return Image         HTTP 429 Quota Exceeded
 ```
+
+**Latency:** <1ms (pure in-memory operation)
 
 ---
 
-## 🔥 Hot Path Guarantee
+## Background Services
 
-**ImagesController endpoints:**
-- `POST /api/v1/images` - Upload
-- `GET /api/v1/images/{id}` - Deliver original
-- `GET /api/v1/images/{id}/transform` - Deliver transformed
+### PolicySnapshotSyncer (60s interval)
+Pull latest tenant policies from Control Plane
 
-**Hot Path Requirements:**
-- ✅ 0 database queries
-- ✅ 0 synchronous HTTP calls to Control Plane
-- ✅ <100ms p99 latency
-- ✅ 1000+ RPS sustained
-- ✅ Budget check in-memory only (TenantBudget state)
+### UsageReporter (10s interval)  
+Push usage deltas to Control Plane (idempotent by report_id)
+
+### BudgetRefiller (5s check)
+Request new budget when < 20% remaining
 
 ---
 
-## 🔄 Background Processes
+## Configuration
 
-### PolicySnapshotSyncer (every 60s)
-```csharp
-GET https://control-api/internal/policy-snapshot
-→ Update in-memory PolicyCache
-```
-
-### BudgetRefiller (when budget < 20%)
-```csharp
-POST https://control-api/internal/budget/allocate
-{ tenant_id, period_id, bandwidth_requested, transforms_requested }
-→ Update TenantBudget state (5-minute lease)
-```
-
-### UsageReporter (every 10-30s)
-```csharp
-POST https://control-api/internal/usage/report
-{ report_id, tenant_id, period_id, bandwidth_used, transforms_used }
-→ Idempotent by report_id
+**appsettings.json:**
+```json
+{
+  "DataPlane": {
+    "DataPlaneId": "local-dev",
+    "ControlApiUrl": "http://localhost:5100",
+    "PolicySyncInterval": "00:01:00",
+    "UsageFlushInterval": "00:00:10",
+    "BudgetRefillCheckInterval": "00:00:05"
+  }
+}
 ```
 
 ---
 
-## 🛡️ Safety Invariants
+## API Endpoints
 
-1. **No Operations Without Budget**: If `TenantBudget.RemainingBandwidth == 0` → 429 Too Many Requests
-2. **Suspended Tenant**: If `PolicySnapshot.Status != Active` → 403 Forbidden
-3. **Expired Lease**: If `TenantBudget.ExpiresAt < Now` → budget = 0 (hard cutoff)
-4. **Domain Verification**: Only serve images for verified domains
-5. **Control Plane Down**: Use cached policies, serve traffic for 10+ min
+### Public Endpoints
 
----
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/images/{id}` | Get original image (budget check) |
+| GET | `/api/v1/images/{id}/transform` | Get transformed image |
+| GET | `/api/v1/images/budget-status` | Debug: view budget state |
 
-## 📊 Observability
+### Health Check Endpoints
 
-### Prometheus Metrics:
-- `pxl8_data_requests_total{tenant_id,endpoint,status}`
-- `pxl8_data_bandwidth_bytes{tenant_id,direction}`
-- `pxl8_data_transform_duration_seconds{percentile}`
-- `pxl8_data_budget_remaining_bytes{tenant_id}`
-- `pxl8_data_policy_sync_age_seconds`
-
-### Health Checks:
-- `/health/live` - Container alive?
-- `/health/ready` - Ready to serve traffic? (policy cache fresh, budget manager OK)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health/live` | Liveness probe |
+| GET | `/health/ready` | Readiness probe |
 
 ---
 
-## 🚀 Deployment
+## Autonomous Operation
 
-**Target:** Yandex Cloud (Russia)
-**Infrastructure:**
-- Compute: Yandex Cloud Functions / Serverless Containers
-- Storage: S3-compatible Object Storage
-- Cache: Yandex Cloud Redis
-- CDN: Yandex CDN (optional)
+**Data Gateway operates 10+ minutes without Control Plane:**
 
-**Environment Variables:**
+1. **Policy Snapshots:** Cached for 60s
+2. **Budget Leases:** 5-minute TTL (hard cutoff)
+3. **Usage Reports:** Accumulate in memory
+
+**Lease Expiry:** At `ExpiresAt` → all budget = 0 → HTTP 429
+
+---
+
+## Development
+
+**Build:**
 ```bash
-CONTROL_API_URL=https://control-api.pxl8.io
-DATAPLANE_ID=ru-central1-a
-POLICY_SYNC_INTERVAL=60000  # 60 seconds
-USAGE_FLUSH_INTERVAL=10000  # 10 seconds
-BUDGET_REFILL_THRESHOLD=0.2 # 20% of granted
+cd data-gateway/Pxl8.DataGateway
+dotnet build
+```
+
+**Run:**
+```bash
+dotnet run
 ```
 
 ---
 
-## 📝 Related Documents
+## Architecture Docs
 
-- [ARCHITECTURE_SPLIT.md](../ARCHITECTURE_SPLIT.md) - Split plane architecture
-- [BUDGET_ALGORITHM.md](../BUDGET_ALGORITHM.md) - Budget allocation algorithm
-- [ROADMAP.md](../ROADMAP.md) - Implementation roadmap
+- [ARCHITECTURE_SPLIT.md](../ARCHITECTURE_SPLIT.md) - Split Planes v1.2
+- [BUDGET_ALGORITHM.md](../BUDGET_ALGORITHM.md) - Budget Algorithm v1.1
+- [EPIC_B_SPLIT_PLANES.md](../EPIC_B_SPLIT_PLANES.md) - Implementation Plan
 
 ---
 
-**Last Updated:** 31 December 2024 (v1.0.0)
+## What's NOT Included (MVP Stub)
+
+- ❌ Actual image storage/transformation
+- ❌ Domain verification
+- ❌ API key authentication
+- ❌ HMAC security
+
+To be added after validating split plane architecture.
+
+---
+
+**License:** Proprietary - PXL8 Project

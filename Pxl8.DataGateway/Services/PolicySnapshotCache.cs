@@ -85,6 +85,19 @@ public class PolicySnapshotCache : IPolicySnapshotCache, IDisposable
         }
     }
 
+    public PolicySnapshotDto? GetCurrentSnapshot()
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            return _currentSnapshot;
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
     public void Dispose()
     {
         _lock?.Dispose();
