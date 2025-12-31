@@ -1,5 +1,6 @@
 using Pxl8.DataGateway.BackgroundServices;
 using Pxl8.DataGateway.Configuration;
+using Pxl8.DataGateway.Security;
 using Pxl8.DataGateway.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,8 +9,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<DataPlaneOptions>(
     builder.Configuration.GetSection(DataPlaneOptions.SectionName));
 
-// HTTP Client for Control API
-builder.Services.AddHttpClient("ControlApi");
+// HTTP Client for Control API with HMAC signing
+builder.Services.AddTransient<HmacSigningHandler>();
+builder.Services.AddHttpClient("ControlApi")
+    .AddHttpMessageHandler<HmacSigningHandler>();
 
 // Data Plane Core Services
 builder.Services.AddSingleton<IBudgetManager, BudgetManager>();

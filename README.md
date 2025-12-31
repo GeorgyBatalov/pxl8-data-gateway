@@ -64,9 +64,27 @@ Request new budget when < 20% remaining
     "PolicySyncInterval": "00:01:00",
     "UsageFlushInterval": "00:00:10",
     "BudgetRefillCheckInterval": "00:00:05"
+  },
+  "InterPlane": {
+    "SharedSecret": "SET_IN_ENVIRONMENT_MIN_32_CHARS_REQUIRED"
   }
 }
 ```
+
+### HMAC Security (v1.1)
+
+All requests from Data Gateway to Control API are automatically signed with HMAC-SHA256:
+
+- **Headers**: `X-Signature`, `X-Timestamp`
+- **Message Format**: `METHOD|PATH|BODY|TIMESTAMP`
+- **Replay Protection**: ±5 minutes timestamp tolerance
+- **Shared Secret**: Configured in `InterPlane:SharedSecret` (min 32 characters)
+
+**Security guarantees:**
+- ✅ Prevents unauthorized access to Control API
+- ✅ Replay attack protection (timestamp validation)
+- ✅ Tamper detection (signature verification)
+- ✅ Constant-time comparison (timing attack prevention)
 
 ---
 
@@ -129,7 +147,7 @@ dotnet run
 - ❌ Actual image storage/transformation
 - ❌ Domain verification
 - ❌ API key authentication
-- ❌ HMAC security
+- ✅ ~~HMAC security~~ **ADDED (v1.1)** - All Control API requests signed with HMAC-SHA256
 
 To be added after validating split plane architecture.
 
