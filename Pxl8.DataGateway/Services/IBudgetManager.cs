@@ -1,4 +1,4 @@
-using Pxl8.ControlApi.Contracts.V1.BudgetAllocation;
+using Pxl8.DataGateway.Contracts.V1.BudgetAllocation;
 using Pxl8.DataGateway.Models;
 
 namespace Pxl8.DataGateway.Services;

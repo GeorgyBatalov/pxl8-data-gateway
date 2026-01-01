@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Pxl8.ControlApi.Contracts.V1.BudgetAllocation;
+using Pxl8.DataGateway.Contracts.V1.BudgetAllocation;
 using Pxl8.DataGateway.Models;
 
 namespace Pxl8.DataGateway.Services;
@@ -133,16 +133,21 @@ public class BudgetManager : IBudgetManager
                 return false;
             }
 
-            // Don't refill if cooldown not elapsed
-            if (DateTimeOffset.UtcNow - budget.LastRefillAttemptAt < RefillCooldown)
+            // Don't refill if cooldown not elapsed (unless lease is expired)
+            var now = DateTimeOffset.UtcNow;
+            var leaseExpired = now > budget.ExpiresAt;
+
+            if (!leaseExpired && now - budget.LastRefillAttemptAt < RefillCooldown)
             {
                 return false;
             }
 
-            // Don't refill if lease expired (will get new lease anyway)
-            if (DateTimeOffset.UtcNow > budget.ExpiresAt)
+            // Refill if lease expired (need new lease)
+            if (leaseExpired)
             {
-                return false;
+                budget.RefillInProgress = true;
+                budget.LastRefillAttemptAt = now;
+                return true;
             }
 
             // Check bandwidth threshold: remaining < 20% of granted

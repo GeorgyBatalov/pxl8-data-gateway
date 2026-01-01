@@ -1,4 +1,4 @@
-using Pxl8.ControlApi.Contracts.V1.PolicySnapshot;
+using Pxl8.DataGateway.Contracts.V1.PolicySnapshot;
 
 namespace Pxl8.DataGateway.Services;
 

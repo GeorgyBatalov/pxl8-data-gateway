@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
-using Pxl8.ControlApi.Contracts.V1.UsageReporting;
+using Pxl8.DataGateway.Contracts.V1.UsageReporting;
 using Pxl8.DataGateway.Configuration;
 using Pxl8.DataGateway.Services;
 
@@ -73,7 +73,7 @@ public class UsageReporter : BackgroundService
             _logger.LogDebug("Flushing usage reports for {Count} tenant/period pairs", tenantsWithUsage.Count);
 
             var client = _httpClientFactory.CreateClient("ControlApi");
-            var url = $"{_options.ControlApiUrl}/internal/usage/report";
+            var url = $"{_options.ControlApiUrl}/internal/v1/usage/report";
 
             foreach (var (tenantId, periodId) in tenantsWithUsage)
             {

@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
-using Pxl8.ControlApi.Contracts.V1.PolicySnapshot;
+using Pxl8.DataGateway.Contracts.V1.PolicySnapshot;
 using Pxl8.DataGateway.Configuration;
 using Pxl8.DataGateway.Services;
 
@@ -65,7 +65,7 @@ public class PolicySnapshotSyncer : BackgroundService
         try
         {
             var client = _httpClientFactory.CreateClient("ControlApi");
-            var url = $"{_options.ControlApiUrl}/internal/policy-snapshot";
+            var url = $"{_options.ControlApiUrl}/internal/v1/policy-snapshot";
 
             _logger.LogDebug("Fetching policy snapshot from {Url}", url);
 

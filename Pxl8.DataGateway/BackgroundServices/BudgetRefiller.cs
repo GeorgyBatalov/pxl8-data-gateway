@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
-using Pxl8.ControlApi.Contracts.V1.BudgetAllocation;
+using Pxl8.DataGateway.Contracts.V1.BudgetAllocation;
 using Pxl8.DataGateway.Configuration;
 using Pxl8.DataGateway.Services;
 
@@ -62,14 +62,27 @@ public class BudgetRefiller : BackgroundService
     {
         try
         {
-            // Get all pending usage tenants (they have budgets)
-            var tenantsWithBudgets = _budgetManager.GetAllTenantsWithPendingUsage().ToList();
+            var tenantsToCheck = new HashSet<(Guid tenantId, Guid periodId)>();
 
-            // Also check tenants from policy snapshot (they might have budgets without pending usage)
-            // TODO: Add method to PolicySnapshotCache to get all tenant IDs
-            // For now, only check tenants with existing budgets
+            // 1. Get all tenants from policy snapshot (includes new tenants needing initial budget)
+            var snapshot = _policyCache.GetCurrentSnapshot();
+            if (snapshot != null)
+            {
+                foreach (var tenant in snapshot.Tenants)
+                {
+                    tenantsToCheck.Add((tenant.TenantId, tenant.CurrentPeriodId));
+                }
+            }
 
-            foreach (var (tenantId, periodId) in tenantsWithBudgets)
+            // 2. Also include tenants with pending usage (may have different periods)
+            var tenantsWithUsage = _budgetManager.GetAllTenantsWithPendingUsage();
+            foreach (var pair in tenantsWithUsage)
+            {
+                tenantsToCheck.Add(pair);
+            }
+
+            // 3. Check each tenant and request refill if needed
+            foreach (var (tenantId, periodId) in tenantsToCheck)
             {
                 if (_budgetManager.ShouldRefill(tenantId, periodId))
                 {
@@ -88,7 +101,7 @@ public class BudgetRefiller : BackgroundService
         try
         {
             var client = _httpClientFactory.CreateClient("ControlApi");
-            var url = $"{_options.ControlApiUrl}/internal/budget/allocate";
+            var url = $"{_options.ControlApiUrl}/internal/v1/budget/allocate";
 
             // Create budget allocation request
             var request = new BudgetAllocateRequest
